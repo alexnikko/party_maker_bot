@@ -1,7 +1,7 @@
 from sqlalchemy import Integer, Column, String, Numeric, Boolean, DateTime, ForeignKey, Table
 from sqlalchemy.orm import relationship
 
-from base import Base
+from .base import Base
 
 UserParty = Table(
     'party_participations', Base.metadata,
@@ -18,7 +18,7 @@ class Party(Base):  # type: ignore
     description = Column(String)
     location = Column(String)
     date = Column(DateTime)
-    organizer_id = Column(String, ForeignKey('users.user_id'))
+    organizer_id = Column(Integer, ForeignKey('users.user_id'))
     cost = Column(Numeric)
     done = Column(Boolean)
 
