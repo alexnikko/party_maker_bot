@@ -1,2 +1,4 @@
 .idea/
 models/__pycache__/
+__pycache__/
+credentials.py
