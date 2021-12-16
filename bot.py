@@ -14,7 +14,7 @@ import credentials
 from sqlalchemy import select
 from models.base import clear_session
 from models.core import create_user, select_all_users, add_user_to_queue, delete_user, get_info_for_scheduler,\
-    roll_queue
+    roll_queue, remove_user_from_queue
 from models.user import User
 from models.user_queue import UserQueue
 from models.scheduler import Planned, SchedulerInfo
@@ -26,7 +26,7 @@ warnings.filterwarnings('ignore')
 # import logging
 
 # logging.basicConfig(level=logging.DEBUG)
-
+GROUP_ID = 0
 DEBUG = True
 
 if DEBUG:
@@ -64,6 +64,7 @@ async def process_callback_button_yes(callback_query: types.CallbackQuery):
     scheduler_info = session.execute(select(SchedulerInfo).filter_by(day=day, user_id=user_id)).scalar()
     scheduler_info.is_answered = True
     scheduler_info.is_agree = True
+    scheduler_info.response_count += 1
 
     planned_day = session.execute(select(Planned).filter_by(day=day)).scalar()
     planned_day.is_planned = True
@@ -76,7 +77,11 @@ async def process_callback_button_yes(callback_query: types.CallbackQuery):
     print('CURRENT QUEUE DB STATE:')
     for user_in_queue in list(session.execute(select(UserQueue)).scalars()):
         print(user_in_queue)
+
     await bot.send_message(callback_query.from_user.id, f'Спасибо, теперь вы главный суетолог {day}')
+    await bot.send_message(GROUP_ID,
+                           text=f'{callback_query.from_user.username} will be organizer of expected date: {day}\n'
+                                f'More information will be send when organizer upload details of sueta!')
 
 
 @dp.callback_query_handler(lambda c: c.data == 'button_no')
@@ -93,12 +98,21 @@ async def process_callback_button_no(callback_query: types.CallbackQuery):
     scheduler_info = session.execute(select(SchedulerInfo).filter_by(day=day, user_id=user_id)).scalar()
     scheduler_info.is_answered = True
     scheduler_info.is_agree = False
+    scheduler_info.response_count += 1
+    scheduler_info.is_declined = True
+
+    user = session.execute(select(User).filter_by(user_id=user_id)).scalar()
+    user.total_declines += 1
     session.commit()
+
     await bot.send_message(callback_query.from_user.id, f'Спасибо за ответ.')
 
 
 @dp.message_handler(commands=['start'])
 async def send_welcome(message: types.Message):
+    if message.chat.id < 0:
+        global GROUP_ID
+        GROUP_ID = message.chat.id
     result = await bot.send_poll(
         chat_id=message.chat.id,
         question='Кем вы хотите быть?',
@@ -227,7 +241,7 @@ async def match():
                 scheduler_info.response_count += 1
                 scheduler_info.last_request_time = current_time.timestamp()
                 session.commit()
-                # todo: send message to person (question)
+                # todo: send message to person (question)  DONE
                 print('SENDING MESSAGE')
                 await bot.send_message(person,
                                        text=f'Hello, can you be the organizer?\n'
@@ -236,14 +250,21 @@ async def match():
                 return
             if not answered[day, person]:
                 if count_response[day, person] > MAX_RESPONSE_COUNT:
-                    # todo: ban user because no answer for a long time
+                    # todo: ban user because no answer for a long time  DONE
                     answered[day, person] = True
 
                     scheduler_info.is_answered = True
+                    user.is_organizer = False
+                    remove_user_from_queue(user_id=person, session=session)
                     session.commit()
                 elif current_time.timestamp() - last_request_time[day, person] < MAX_RESPONSE_SECONDS:
                     return
                 # todo: send message to person
+                await bot.send_message(person,
+                                       text=f'Kind reminder\n'
+                                            f'Could you, please, be the organizer?\n'
+                                            f'Expected date: {day}',
+                                       reply_markup=answer_kb)
                 count_response[day, person] += 1
                 last_request_time[day, person] = current_time.timestamp()
 

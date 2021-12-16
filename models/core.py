@@ -12,14 +12,14 @@ from decimal import Decimal
 from collections import defaultdict
 
 
-def create_user(user_id: str, username: str, full_name: str, is_organizer: bool, *, session: Session) -> User:
+def create_user(user_id: int, username: str, full_name: str, is_organizer: bool, *, session: Session) -> User:
     user = User(user_id=user_id, username=username, full_name=full_name, is_organizer=is_organizer)
     session.add(user)
     session.commit()
     return user
 
 
-def delete_user(user_id: str, *, session: Session) -> bool:
+def delete_user(user_id: int, *, session: Session) -> bool:
     user = session.execute(select(User).filter_by(user_id=user_id)).scalar()
     if user:
         if user.is_organizer:
@@ -36,7 +36,7 @@ def select_all_users(*, session: Session):
 
 
 def create_party(title: str, description: str, location: str, date: datetime,
-                 organizer_id: str, cost: Decimal, done: bool, *, session: Session) -> Party:
+                 organizer_id: int, cost: Decimal, done: bool, *, session: Session) -> Party:
     party = Party(
         title=title,
         description=description,
@@ -56,19 +56,25 @@ def select_all_parties(*, session: Session):
     return parties
 
 
-def add_user_to_queue(user_id: str, has_plan: bool, *, session: Session) -> UserQueue:
+def add_user_to_queue(user_id: int, has_plan: bool, *, session: Session) -> UserQueue:
     queue = UserQueue(user_id=user_id, has_plan=has_plan)
     session.add(queue)
     session.commit()
     return queue
 
 
-def roll_queue(user_id: str, *, session: Session) -> UserQueue:
+def remove_user_from_queue(user_id: int, *, session: Session):
+    user_in_queue = session.execute(select(UserQueue).filter_by(user_id=user_id)).scalar()
+    session.delete(user_in_queue)
+    session.commit()
+
+
+def roll_queue(user_id: int, *, session: Session) -> UserQueue:
     user_in_queue = session.execute(select(UserQueue).filter_by(user_id=user_id)).scalar()
     user_id = user_in_queue.user_id
     has_plan = user_in_queue.has_plan
-    session.delete(user_in_queue)
-    session.commit()
+
+    remove_user_from_queue(user_id, session=session)
     add_user_to_queue(user_id, has_plan, session=session)
     return user_in_queue
 
