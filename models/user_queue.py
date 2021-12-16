@@ -7,7 +7,8 @@ from .base import Base
 class UserQueue(Base):  # type: ignore
     __tablename__ = 'user_queue'
 
-    user_id = Column(Integer, primary_key=True)
+    row_id = Column(Integer, primary_key=True)
+    user_id = Column(Integer)
     has_plan = Column(Boolean)
 
     def __repr__(self) -> str:
