@@ -472,12 +472,6 @@ async def some_poll_answer_handler(poll_answer: types.PollAnswer):
         delete_user(user_id, session=session)
 
 
-@dp.message_handler()
-async def create_deeplink(message: types.Message):
-    await bot.send_message(message.chat.id, reply_to_message_id=message.message_id,
-                           text=f'THANK YOU SO MUCH FOR YOU MESSAGE, DEAR {message.from_user.mention}')
-
-
 def get_next_4_weekends() -> list[str]:
     weekends = []
     current_day = datetime.now().date()
