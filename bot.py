@@ -240,7 +240,7 @@ async def send_idea_request(message: types.Message):
         return
     tokens = message.text.split()
     # command = tokens[0]
-    words = tokens[1:]
+    words = tokens[1:] if len(tokens) > 1 else []
     if len(words) < MIN_IDEA_LENGTH:
         await bot.send_message(chat_id=message.chat.id,
                                text='Sorry, but your idea is too short, describe it more informative')
