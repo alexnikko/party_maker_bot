@@ -455,21 +455,21 @@ async def some_poll_answer_handler(poll_answer: types.PollAnswer):
                 party.users.pop(party.users.index(user))
                 await bot.send_message(party.organizer_id, text=f'{user.username} выпилился из суеты!')
         session.commit()
-        return
-    tg_user = poll_answer['user']
-    user_id = tg_user.id
-    username = tg_user.username
-    full_name = tg_user.full_name
-    is_retract = not poll_answer['option_ids']
-    if not is_retract:
-        is_organizer = poll_answer['option_ids'][0] == 0
-        create_user(user_id, username, full_name, is_organizer, session=session)
-
-        if is_organizer:
-            add_user_to_queue(user_id=user_id, has_plan=False, session=session)
     else:
-        # delete user from users DB and from queue if he was organizer
-        delete_user(user_id, session=session)
+        tg_user = poll_answer['user']
+        user_id = tg_user.id
+        username = tg_user.username
+        full_name = tg_user.full_name
+        is_retract = not poll_answer['option_ids']
+        if not is_retract:
+            is_organizer = poll_answer['option_ids'][0] == 0
+            create_user(user_id, username, full_name, is_organizer, session=session)
+
+            if is_organizer:
+                add_user_to_queue(user_id=user_id, has_plan=False, session=session)
+        else:
+            # delete user from users DB and from queue if he was organizer
+            delete_user(user_id, session=session)
 
 
 def get_next_4_weekends() -> list[str]:
