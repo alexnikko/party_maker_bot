@@ -21,3 +21,10 @@ class SchedulerInfo(Base):  # type: ignore
     is_declined = Column(Boolean, default=False)
     response_count = Column(Integer, default=0)
     last_request_time = Column(Float, default=0)
+
+
+class Poll(Base):  # type: ignore
+    __tablename__ = 'polls'
+
+    poll_id = Column(String, primary_key=True)
+    party_id = Column(Integer, primary_key=True)
