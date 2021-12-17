@@ -4,7 +4,7 @@ from decimal import Decimal
 from base import clear_database, clear_session
 from core import create_user, select_all_users, create_party, select_all_parties, add_user_to_queue
 from party import UserParty
-from user_queue import UserQueue
+from user import UserQueue
 
 from sqlalchemy import select
 

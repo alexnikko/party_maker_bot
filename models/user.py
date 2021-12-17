@@ -22,3 +22,14 @@ class User(Base):  # type: ignore
         return f'<User user_id={self.user_id}, username={self.username}, ' \
                f'full_name={self.full_name}, is_organizer={self.is_organizer}, ' \
                f'total_declines={self.total_declines}>'
+
+
+class UserQueue(Base):  # type: ignore
+    __tablename__ = 'user_queue'
+
+    row_id = Column(Integer, primary_key=True)
+    user_id = Column(Integer)
+    has_plan = Column(Boolean)
+
+    def __repr__(self) -> str:
+        return f'<UserQueue user_id={self.user_id}, has_plan={self.has_plan}>'

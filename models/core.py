@@ -1,15 +1,17 @@
 from sqlalchemy import select
 
 from .base import Session
-from .user import User
-from .party import Party
-from .user_queue import UserQueue
+from .user import User, UserQueue
+from .party import Party, Idea
 from .scheduler import Planned, SchedulerInfo
 
 from datetime import datetime
-from decimal import Decimal
-
 from collections import defaultdict
+
+composite_key = tuple[str, int]
+composite_mapping_bool = dict[composite_key, bool]
+composite_mapping_int = dict[composite_key, int]
+composite_mapping_float = dict[composite_key, float]
 
 
 def create_user(user_id: int, username: str, full_name: str, is_organizer: bool, *, session: Session) -> User:
@@ -35,8 +37,8 @@ def select_all_users(*, session: Session):
     return users
 
 
-def create_party(title: str, description: str, location: str, date: datetime,
-                 organizer_id: int, cost: Decimal, done: bool, *, session: Session) -> Party:
+def create_party(title: str, description: str, location: str, date: str,
+                 organizer_id: int, cost: float, done: bool, *, session: Session) -> Party:
     party = Party(
         title=title,
         description=description,
@@ -44,11 +46,23 @@ def create_party(title: str, description: str, location: str, date: datetime,
         date=date,
         organizer_id=organizer_id,
         cost=cost,
-        done=done
+        done=done,
+        date_datetime=datetime.strptime(date, '%d/%m/%Y')
     )
     session.add(party)
     session.commit()
     return party
+
+
+def create_idea(description: str, *, session: Session) -> Idea:
+    idea = Idea(description=description)
+    session.add(idea)
+    session.commit()
+    return idea
+
+
+def select_ideas(*, session: Session) -> Idea:
+    return session.execute(select(Idea)).scalars()
 
 
 def select_all_parties(*, session: Session):
@@ -90,14 +104,12 @@ def get_info_for_scheduler(*, session: Session):
         for plan in planned_entities
     }
 
-
-
-    asked: dict[tuple[str, int], bool] = defaultdict(bool)
-    answered: dict[tuple[str, int], bool] = defaultdict(bool)
-    agree: dict[tuple[str, int], bool] = defaultdict(bool)
-    declined: dict[tuple[str, int], bool] = defaultdict(bool)
-    count_response: dict[tuple[str, int], int] = defaultdict(int)
-    last_request_time: dict[tuple[str, int], float] = defaultdict(float)
+    asked: composite_mapping_bool = defaultdict(bool)
+    answered: composite_mapping_bool = defaultdict(bool)
+    agree: composite_mapping_bool = defaultdict(bool)
+    declined: composite_mapping_bool = defaultdict(bool)
+    count_response: composite_mapping_int = defaultdict(int)
+    last_request_time: composite_mapping_float = defaultdict(float)
 
     for scheduler_info in scheduler_info_entities:
         day, person = scheduler_info.day, scheduler_info.user_id
