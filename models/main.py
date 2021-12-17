@@ -70,8 +70,8 @@ if __name__ == '__main__':
         print(x)
 
     # adding users to queue of parties creation
-    add_user_to_queue('log_loss', has_plan=False, session=session)
-    add_user_to_queue('alexnikko', has_plan=False, session=session)
+    add_user_to_queue(1, has_plan=False, session=session)
+    add_user_to_queue(2, has_plan=False, session=session)
 
     # print current queue
     print('CURRENT QUEUE STATE:')

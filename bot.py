@@ -60,12 +60,10 @@ answer_set_status.add(button_become_chiller)
 
 @dp.callback_query_handler(lambda c: c.data == 'button_yes')
 async def process_callback_button_yes(callback_query: types.CallbackQuery):
-    # print('callback_query', callback_query)
     day = callback_query.message.text.split()[-1]
     user_id = callback_query.from_user.id
     message_time = callback_query.message.date.timestamp()
     answer_time = datetime.now().timestamp()
-    # print(day, user_id, message_time, answer_time, answer_time - message_time, sep='\n')
     if answer_time - message_time > MAX_RESPONSE_SECONDS:
         await bot.answer_callback_query(callback_query.id)
         return
@@ -84,13 +82,7 @@ async def process_callback_button_yes(callback_query: types.CallbackQuery):
     )
     session.commit()
 
-    print('CURRENT QUEUE DB STATE:')
-    for user_in_queue in list(session.execute(select(UserQueue)).scalars()):
-        print(user_in_queue)
     roll_queue(user_id, session=session)
-    print('CURRENT QUEUE DB STATE:')
-    for user_in_queue in list(session.execute(select(UserQueue)).scalars()):
-        print(user_in_queue)
     await bot.answer_callback_query(callback_query.id)
     await bot.send_message(callback_query.from_user.id, f'Спасибо, теперь вы главный суетолог {day}', )
     await bot.send_message(GROUP_ID,
@@ -108,12 +100,10 @@ async def process_callback_button_yes(callback_query: types.CallbackQuery):
 
 @dp.callback_query_handler(lambda c: c.data == 'button_no')
 async def process_callback_button_no(callback_query: types.CallbackQuery):
-    # print('callback_query', callback_query)
     day = callback_query.message.text.split()[-1]
     user_id = callback_query.from_user.id
     message_time = callback_query.message.date.timestamp()
     answer_time = datetime.now().timestamp()
-    # print(day, user_id, message_time, answer_time, answer_time - message_time, sep='\n')
     if answer_time - message_time > MAX_RESPONSE_SECONDS:
         await bot.answer_callback_query(callback_query.id)
         return
@@ -146,7 +136,6 @@ async def send_status_request(message: types.Message):
         text='Кем вы хотети быть?',
         reply_markup=answer_set_status
     )
-    print(result)
 
 
 # @dp.callback_query_handler(lambda c: c.data == 'button_become_organizer')
@@ -166,7 +155,6 @@ async def process_callback_button_become_organizer(callback_query: types.Callbac
     else:
         user.is_organizer = is_organizer
         session.commit()
-    print(user)
     await bot.answer_callback_query(callback_query.id)
     await bot.send_message(user_id, text='Successfully changed status')
 
@@ -326,6 +314,11 @@ async def send_edit_party_info_description_request(message: types.Message):
         return
     day = tokens[1]
     description = ' '.join(tokens[2:])
+    parties = list(session.execute(select(Party).filter_by(organizer_id=user.user_id)).scalars())
+    available_days = {party.date for party in parties if not party.done}
+    if day not in available_days:
+        await bot.send_message(chat_id=user.user_id, text=f'Sorry, you have no that date :( {day} - WRONG DATE')
+        return
     party = session.execute(select(Party).filter_by(date=day)).scalar()
     party.description = description
     session.commit()
@@ -342,7 +335,6 @@ async def send_edit_party_info_description_request(message: types.Message):
 @dp.message_handler(commands=['show_nearest'])
 async def send_show_nearest_request(message: types.Message):
     nearest_party_time = session.execute(select(func.min(Party.date_datetime)).where(Party.done == False)).scalar()
-    print(nearest_party_time)
     if not nearest_party_time:
         await bot.send_message(chat_id=message.chat.id, text='No parties are planned :(')
         return
@@ -393,6 +385,8 @@ async def send_ideas_request(message: types.Message):
 
 @dp.message_handler(commands=['start'])
 async def send_welcome(message: types.Message):
+    if message.chat.id > 0:
+        return
     if message.chat.id < 0:
         global GROUP_ID
         GROUP_ID = message.chat.id
@@ -402,7 +396,6 @@ async def send_welcome(message: types.Message):
         options=['Суетологом! (организатором мероприятий)', 'Тусером! (участником мероприятий)'],
         is_anonymous=False
     )
-    print(result)
 
 
 @dp.message_handler(commands=['help'])
@@ -417,6 +410,7 @@ async def process_help_command(message: types.Message):
         '/decline_organization',
         '/idea <description>',
         '/ideas',
+        '/reset'
     ]
     descriptions = [
         'показывает список доступных команд',
@@ -427,12 +421,20 @@ async def process_help_command(message: types.Message):
         'изменяет статус роли (в личке)',
         'организатор может отказаться от организации мероприятия (в личке)',
         'записывает идею для сует (в личке)',
-        'показывает записанные для сует идеи'
+        'показывает записанные для сует идеи',
+        'чистит базу данных'
     ]
     big_message ='Это help message\n'
     for command, description in zip(commands, descriptions):
         big_message += f'{command} - {description}\n'
     await bot.send_message(chat_id=message.chat.id, text=big_message)
+
+
+@dp.message_handler(commands=['reset'])
+async def process_help_command(message: types.Message):
+    global session
+    session = clear_session()
+    await bot.send_message(chat_id=message.chat.id, text='Database is cleared!')
 
 
 @dp.poll_answer_handler()
@@ -472,7 +474,6 @@ async def some_poll_answer_handler(poll_answer: types.PollAnswer):
 
 @dp.message_handler()
 async def create_deeplink(message: types.Message):
-    print(message)
     await bot.send_message(message.chat.id, reply_to_message_id=message.message_id,
                            text=f'THANK YOU SO MUCH FOR YOU MESSAGE, DEAR {message.from_user.mention}')
 
@@ -548,16 +549,10 @@ async def match():
             if declined[day, person]:
                 continue
             if not asked[day, person]:
-                # asked[day, person] = True
-                # count_response[day, person] += 1
-                # last_request_time[day, person] = current_time.timestamp()
-
                 scheduler_info.is_asked = True
                 scheduler_info.response_count += 1
                 scheduler_info.last_request_time = current_time.timestamp()
                 session.commit()
-                # todo: send message to person (question)  DONE
-                print('SENDING MESSAGE')
                 await bot.send_message(person,
                                        text=f'Hello, can you be the organizer?\n'
                                             f'Expected date: {day}',
@@ -565,55 +560,23 @@ async def match():
                 return
             if not answered[day, person]:
                 if scheduler_info.response_count > MAX_RESPONSE_COUNT:
-                    # if count_response[day, person] > MAX_RESPONSE_COUNT:
-                    # todo: ban user because no answer for a long time  DONE
-                    # answered[day, person] = True
-
                     scheduler_info.is_answered = True
                     user.is_organizer = False
                     remove_user_from_queue(user_id=person, session=session)
                     session.commit()
                 elif current_time.timestamp() - last_request_time[day, person] < MAX_RESPONSE_SECONDS:
                     return
-                # todo: send message to person
                 await bot.send_message(person,
                                        text=f'Kind reminder\n'
                                             f'Could you, please, be the organizer?\n'
                                             f'Expected date: {day}',
                                        reply_markup=answer_kb)
-                # count_response[day, person] += 1
-                # last_request_time[day, person] = current_time.timestamp()
 
                 scheduler_info.response_count += 1
                 scheduler_info.last_request_time = current_time.timestamp()
                 session.commit()
                 return
-            # elif agree[day, person]:
-            #     planned[day] = True
-            #     answered[day, person] = True
-            #
-            #     planned_day.is_planned = True
-            #     scheduler_info.is_answered = True
-            #     session.commit()
-            #     # todo: send message to the group about incoming party and its organizer
-            #     # todo: dequeue and enqueue person again (to the tail of queue)
-            #     # todo: check if organizer was last time organizer too
-            #     return
-            # else:
-            #     declined[day, person] = True
-            #     total_declines[person] += 1
-            #
-            #     scheduler_info.is_declined = True
-            #     user.total_declines += 1
-            #     session.commit()
-            #     if total_declines[person] > MAX_TOTAL_DECLINES:
-            #         # todo: ban person
-            #         pass
-            #     else:
-            #         # todo: dequeue and enqueue person again (to the tail of queue)
-            #         pass
 
-        # todo: send message to the group about default party
         if queue:
             planned[day] = True
             planned_day.is_planned = True
@@ -627,7 +590,6 @@ async def match():
             await bot.send_message(GROUP_ID,
                                    text=f'I didn\'t find organizer for expected date: {day}\n'
                                         f'So let\'s go to RANDOM PLACE!!!!!! MAXIMUM SUETI)')
-            # todo: POLL for decision
 
 
 async def scheduler():

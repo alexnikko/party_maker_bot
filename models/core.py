@@ -15,6 +15,9 @@ composite_mapping_float = dict[composite_key, float]
 
 
 def create_user(user_id: int, username: str, full_name: str, is_organizer: bool, *, session: Session) -> User:
+    user = session.execute(select(User).filter_by(user_id=user_id)).scalar()
+    if user:
+        return user
     user = User(user_id=user_id, username=username, full_name=full_name, is_organizer=is_organizer)
     session.add(user)
     session.commit()
@@ -71,6 +74,9 @@ def select_all_parties(*, session: Session):
 
 
 def add_user_to_queue(user_id: int, has_plan: bool, *, session: Session) -> UserQueue:
+    user = session.execute(select(UserQueue).filter_by(user_id=user_id)).scalar()
+    if user:
+        return user
     queue = UserQueue(user_id=user_id, has_plan=has_plan)
     session.add(queue)
     session.commit()
