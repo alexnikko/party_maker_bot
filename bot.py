@@ -13,7 +13,7 @@ from models.base import clear_session
 from models.core import create_user, add_user_to_queue, delete_user, get_info_for_scheduler, \
     roll_queue, remove_user_from_queue, create_party, create_idea, select_ideas, create_poll
 from models.party import Party
-from models.user import User, UserQueue
+from models.user import User
 from models.scheduler import Planned, SchedulerInfo, Poll
 
 import warnings
@@ -94,8 +94,8 @@ async def process_callback_button_yes(callback_query: types.CallbackQuery):
         options=['Я в деле!', 'Я пас :('],
         is_anonymous=False
     )
-    await bot.pin_chat_message(chat_id=GROUP_ID, message_id=poll.message_id)
     create_poll(poll_id=poll.poll.id, party_id=party.party_id, session=session)
+    await bot.pin_chat_message(chat_id=GROUP_ID, message_id=poll.message_id)
 
 
 @dp.callback_query_handler(lambda c: c.data == 'button_no')
