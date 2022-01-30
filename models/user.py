@@ -13,15 +13,14 @@ class User(Base):  # type: ignore
     full_name = Column(String)
     is_organizer = Column(Boolean)
     total_declines = Column(Integer, default=0)
+    state = Column(Integer, default=0)
 
     # Relations
     parties = relationship('Party', secondary=UserParty, back_populates='users')
     organized_parties = relationship('Party', back_populates='organizer')
 
     def __repr__(self) -> str:
-        return f'<User user_id={self.user_id}, username={self.username}, ' \
-               f'full_name={self.full_name}, is_organizer={self.is_organizer}, ' \
-               f'total_declines={self.total_declines}>'
+        return f'{self.username}'
 
 
 class UserQueue(Base):  # type: ignore

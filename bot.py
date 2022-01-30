@@ -30,16 +30,24 @@ MIN_IDEA_LENGTH = 3
 
 if DEBUG:
     MAX_RESPONSE_COUNT = 2
-    MAX_RESPONSE_SECONDS = 10
+    MAX_RESPONSE_SECONDS = 60
+    MAX_RESPONSE_SECONDS_FILL_DESC = 60
     MAX_TOTAL_DECLINES = 1
 else:
     MAX_RESPONSE_COUNT = 2
     MAX_RESPONSE_SECONDS = 1 * 60 * 60
+    MAX_RESPONSE_SECONDS_FILL_DESC = 1 * 60 * 60
     MAX_TOTAL_DECLINES = 1
+
+WORK_START_HOUR = 12
+WORK_END_HOUR = 20
 
 bot = Bot(token=credentials.token)
 dp = Dispatcher(bot)
 session = clear_session()
+
+# TODO: set commands descriptions via code
+# bot.set_my_commands()
 
 # buttons
 button_yes = types.InlineKeyboardButton('Yes', callback_data='button_yes')
@@ -85,17 +93,17 @@ async def process_callback_button_yes(callback_query: types.CallbackQuery):
     roll_queue(user_id, session=session)
     await bot.answer_callback_query(callback_query.id)
     await bot.send_message(callback_query.from_user.id, f'Спасибо, теперь вы главный суетолог {day}', )
-    await bot.send_message(GROUP_ID,
-                           text=f'{callback_query.from_user.username} will be organizer of expected date: {day}\n'
-                                f'More information will be send when organizer upload details of sueta!')
-    poll = await bot.send_poll(
-        chat_id=GROUP_ID,
-        question=f'Пойдёшь на мероприятие от {callback_query.from_user.username}?',
-        options=['Я в деле!', 'Я пас :('],
-        is_anonymous=False
-    )
-    create_poll(poll_id=poll.poll.id, party_id=party.party_id, session=session)
-    await bot.pin_chat_message(chat_id=GROUP_ID, message_id=poll.message_id)
+    # await bot.send_message(GROUP_ID,
+    #                        text=f'{callback_query.from_user.username} will be organizer of expected date: {day}\n'
+    #                             f'More information will be send when organizer upload details of sueta!')
+    # poll = await bot.send_poll(
+    #     chat_id=GROUP_ID,
+    #     question=f'Пойдёшь на мероприятие от {callback_query.from_user.username}?',
+    #     options=['Я в деле!', 'Я пас :('],
+    #     is_anonymous=False
+    # )
+    # create_poll(poll_id=poll.poll.id, party_id=party.party_id, session=session)
+    # await bot.pin_chat_message(chat_id=GROUP_ID, message_id=poll.message_id)
 
 
 @dp.callback_query_handler(lambda c: c.data == 'button_no')
@@ -209,7 +217,6 @@ async def process_callback_button_decline_organization(callback_query: types.Cal
     await bot.answer_callback_query(callback_query.id)
     await bot.send_message(user.user_id, text='Successfully remove you from party organization')
 
-
 @dp.message_handler(commands=['show_participants'])
 async def send_show_participants_request(message: types.Message):
     if message.chat.id < 0:
@@ -272,21 +279,20 @@ async def send_edit_party_info_request(message: types.Message):
     if not parties:
         await bot.send_message(chat_id=user.user_id, text='Sorry, you have no planned parties')
         return
-    available_days = [party.date for party in parties if not party.done]
-    # create button for each available_party
-    buttons = [
-        types.InlineKeyboardButton(available_day,
-                                   callback_data=f'btn_change_info_{available_day}')
-        for available_day in available_days
-    ]
-    answer_show_editable_days = types.InlineKeyboardMarkup()
-    for button in buttons:
-        answer_show_editable_days.insert(button)
+    nearest_party_time = min(party.date_datetime for party in parties if not party.done)
+    nearest_party = session.execute(
+        select(Party).filter_by(organizer_id=user.user_id).filter_by(date_datetime=nearest_party_time)).scalar()
+
+    user.state = 1
+    session.commit()
     await bot.send_message(
         chat_id=message.chat.id,
-        text='Описание какого мероприятия вы хотите изменить?',
-        reply_markup=answer_show_editable_days
+        text=f'Send me description of your party, now it is:\n'
+             f'{nearest_party}',
     )
+
+
+
 
 
 @dp.callback_query_handler(lambda c: c.data.startswith('btn_change_info_'))
@@ -341,7 +347,7 @@ async def send_show_nearest_request(message: types.Message):
     nearest_party = session.execute(select(Party).filter_by(date_datetime=nearest_party_time)).scalar()
     optional_info = ''
     if message.chat.id > 0:
-        if message.from_user in nearest_party.users:
+        if message.from_user in nearest_party.users or message.from_user == nearest_party.organizer:
             optional_info = '\nYou are going to visit it! :)'
         else:
             optional_info = '\nYou are not going to visit it! :('
@@ -350,6 +356,34 @@ async def send_show_nearest_request(message: types.Message):
                            text=f'The nearest party is:\n'
                                 f'{nearest_party}'
                                 f'{optional_info}')
+
+
+@dp.message_handler(commands=['tag_all'])
+async def tag_all_request(message: types.Message):
+    user_text = ' '.join(message.text.split()[1:])
+    user = session.execute(select(User).filter_by(user_id=message.from_user.id)).scalar()
+    if not user:
+        await bot.send_message(chat_id=user.user_id, text='Sorry, you are not in group chat of SUETA')
+        return
+    if not user.is_organizer:
+        await bot.send_message(chat_id=user.user_id, text='Sorry, you are not organizer!')
+        return
+    parties = list(session.execute(select(Party).filter_by(organizer_id=user.user_id)).scalars())
+    if not parties:
+        await bot.send_message(chat_id=user.user_id, text='Sorry, you have no planned parties')
+        return
+    nearest_party_time = session.execute(select(func.min(Party.date_datetime)).where(Party.done == False) \
+                                         .where(Party.organizer_id == user.user_id)).scalar()
+    nearest_party = session.execute(select(Party).filter_by(date_datetime=nearest_party_time)).scalar()
+    tag_list = [
+        f'@{participant.username}'
+        for participant in nearest_party.users
+    ]
+    await bot.send_message(
+        chat_id=GROUP_ID, #message.chat.id,
+        text=f'{user_text}\n'
+             f'{" ".join(tag_list)}'
+    )
 
 
 @dp.message_handler(commands=['idea'])
@@ -437,6 +471,165 @@ async def process_help_command(message: types.Message):
     await bot.send_message(chat_id=message.chat.id, text='Database is cleared!')
 
 
+@dp.message_handler(commands=['send_poll'])
+async def send_send_poll_request(message: types.Message):
+    question = ' '.join(message.text.split()[1:])
+    if not question:
+        question = 'Выбираем дату суеты на следующей неделе!'
+    if message.chat.id < 0:
+        return
+    user = session.execute(select(User).filter_by(user_id=message.from_user.id)).scalar()
+    if not user:
+        await bot.send_message(chat_id=user.user_id, text='Sorry, you are not in group chat of SUETA')
+        return
+    if not user.is_organizer:
+        await bot.send_message(chat_id=user.user_id, text='Sorry, you are not organizer!')
+        return
+    parties = list(session.execute(select(Party).filter_by(organizer_id=user.user_id)).scalars())
+    if not parties:
+        await bot.send_message(chat_id=user.user_id, text='Sorry, you have no planned parties')
+        return
+    min_datetime = min(party.date_datetime for party in parties if not party.done)
+    nearest_party = session.execute(select(Party).filter_by(organizer_id=user.user_id).filter_by(date_datetime=min_datetime)).scalar()
+    print(f'We are in send_poll func\n'
+          f'{min_datetime, type(min_datetime)}\n'
+          f'{nearest_party}')
+
+    dates = [
+        min_datetime + timedelta(days=days)
+        for days in range(2, 9)
+    ]
+
+    options = [
+        f'{x.strftime("%a")} {x.date()}'
+        for x in dates
+    ] + ['тык']
+
+    poll = await bot.send_poll(
+        chat_id=GROUP_ID,
+        question=question,
+        options=options,
+        is_anonymous=False,
+        allows_multiple_answers=True,
+    )
+    create_poll(poll_id=poll.poll.id, party_id=nearest_party.party_id, message_id=poll.message_id,
+                session=session)
+    await bot.pin_chat_message(chat_id=GROUP_ID, message_id=poll.message_id)
+
+
+@dp.message_handler(commands=['show_poll'])
+async def send_show_poll_results_request(message: types.Message):
+    if message.chat.id < 0:
+        return
+    user = session.execute(select(User).filter_by(user_id=message.from_user.id)).scalar()
+    if not user:
+        await bot.send_message(chat_id=user.user_id, text='Sorry, you are not in group chat of SUETA')
+        return
+    if not user.is_organizer:
+        await bot.send_message(chat_id=user.user_id, text='Sorry, you are not organizer!')
+        return
+    parties = list(session.execute(select(Party).filter_by(organizer_id=user.user_id)).scalars())
+    if not parties:
+        await bot.send_message(chat_id=user.user_id, text='Sorry, you have no planned parties')
+        return
+    min_datetime = min(party.date_datetime for party in parties if not party.done)
+    nearest_party = session.execute(select(Party).filter_by(organizer_id=user.user_id).filter_by(date_datetime=min_datetime)).scalar()
+
+    poll = session.execute(select(Poll).filter_by(party_id=nearest_party.party_id)).scalar()
+
+    await bot.forward_message(
+        chat_id=user.user_id,
+        from_chat_id=GROUP_ID,
+        message_id=poll.message_id
+    )
+
+
+@dp.message_handler(commands=['set_date'])
+async def send_set_date_request(message: types.Message):
+    if message.chat.id < 0:
+        return
+    user = session.execute(select(User).filter_by(user_id=message.from_user.id)).scalar()
+    if not user:
+        await bot.send_message(chat_id=user.user_id, text='Sorry, you are not in group chat of SUETA')
+        return
+    if not user.is_organizer:
+        await bot.send_message(chat_id=user.user_id, text='Sorry, you are not organizer!')
+        return
+    parties = list(session.execute(select(Party).filter_by(organizer_id=user.user_id)).scalars())
+    if not parties:
+        await bot.send_message(chat_id=user.user_id, text='Sorry, you have no planned parties')
+        return
+    min_datetime = min(party.date_datetime for party in parties if not party.done)
+    nearest_party = session.execute(select(Party).filter_by(organizer_id=user.user_id).filter_by(date_datetime=min_datetime)).scalar()
+    print(f'We are in set_date func\n'
+          f'{min_datetime, type(min_datetime)}\n'
+          f'{nearest_party}')
+
+    dates = [
+        min_datetime + timedelta(days=days)
+        for days in range(2, 9)
+    ]
+
+    buttons = [
+        types.InlineKeyboardButton(f'{x.strftime("%a")} {x.date()}',
+                                   callback_data=f'btn_set_date_{str(x.date())}')
+        for x in dates
+    ]
+    answer_set_date = types.InlineKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    for button in buttons:
+        answer_set_date.add(button)
+    await bot.send_message(
+        chat_id=message.chat.id,
+        text='В какой день хочешь провести суюту на следующей неделе?',
+        reply_markup=answer_set_date
+    )
+
+
+@dp.callback_query_handler(lambda c: c.data.startswith('btn_set_date_'))
+async def process_callback_button_set_date(callback_query: types.CallbackQuery):
+    # print(f'We are in set_date_process_callback\n'
+    #       f'callback_query = {callback_query}\n'
+    #       f'message = {callback_query.message}\n'
+    #       f'values = {callback_query.values}\n'
+    #       f'answer = {callback_query.answer}')
+    user = session.execute(select(User).filter_by(user_id=callback_query.from_user.id)).scalar()
+    day = callback_query.data[-10:]
+    day = datetime.strptime(day, '%Y-%m-%d')
+
+    parties = list(session.execute(select(Party).filter_by(organizer_id=user.user_id)).scalars())
+    min_datetime = min(party.date_datetime for party in parties if not party.done)
+    nearest_party = session.execute(
+        select(Party).filter_by(organizer_id=user.user_id).filter_by(date_datetime=min_datetime)).scalar()
+    nearest_party.actual_datetime = day
+    session.commit()
+    await bot.answer_callback_query(callback_query.id)
+    await bot.send_message(user.user_id, text=f'Successfully set date:\n'
+                                              f'{nearest_party}')
+
+
+@dp.message_handler()
+async def read_user_message(message: types.Message):
+    print('GET MESSAGE')
+    if message.chat.id < 0:
+        return
+    user = session.execute(select(User).filter_by(user_id=message.from_user.id)).scalar()
+    if not user:
+        await bot.send_message(chat_id=user.user_id, text='Sorry, you are not in group chat of SUETA')
+        return
+    if user.state == 0:
+        await bot.send_message(chat_id=user.user_id, text='Firstly send me /edit')
+        return
+    if user.state == 1:
+        party = session.execute(select(Party).filter_by(organizer_id=user.user_id)).scalar()
+        party.description = message.text
+        await bot.send_message(chat_id=user.user_id, text=f'Описание суеты успешно изменено:\n'
+                                                          f'{party}')
+    else:
+        print('unknown user state')
+    user.state = 0
+    session.commit()
+
+
 @dp.poll_answer_handler()
 async def some_poll_answer_handler(poll_answer: types.PollAnswer):
     poll_ids = set(session.execute(select(Poll.poll_id)).scalars())
@@ -449,11 +642,11 @@ async def some_poll_answer_handler(poll_answer: types.PollAnswer):
             will_visit = False
         if will_visit:
             party.users.append(user)
-            await bot.send_message(party.organizer_id, text=f'{user.username} вписался в суету!')
+            # await bot.send_message(party.organizer_id, text=f'{user.username} вписался в суету!')
         else:
             if user in party.users:
                 party.users.pop(party.users.index(user))
-                await bot.send_message(party.organizer_id, text=f'{user.username} выпилился из суеты!')
+                # await bot.send_message(party.organizer_id, text=f'{user.username} выпилился из суеты!')
         session.commit()
     else:
         tg_user = poll_answer['user']
@@ -499,7 +692,7 @@ async def match():
     :return:
     """
     current_time = datetime.now()
-    if not DEBUG and (current_time.hour < 12 or current_time.hour > 20):
+    if not DEBUG and (current_time.hour < WORK_START_HOUR or current_time.hour > WORK_END_HOUR):
         return
 
     if DEBUG:
@@ -527,7 +720,20 @@ async def match():
             print(day, planned[day])
         if planned[day]:
             party = session.execute(select(Party).filter_by(date=day)).scalar()
-            if party.organizer_id != -42 and not party.description:
+            if party.organizer_id == -42:
+                continue
+            scheduler_info = session.execute(select(SchedulerInfo).filter_by(day=day, user_id=party.organizer_id)).scalar()
+            last_request_time_ = scheduler_info.last_request_time
+            if DEBUG:
+                print(f'current_time = {current_time.timestamp()}\n'
+                      f'last_request_time = {last_request_time_}\n'
+                      f'{current_time.timestamp() - last_request_time_}, {MAX_RESPONSE_SECONDS_FILL_DESC}\n'
+                      f'Should wait to ping = {current_time.timestamp() - last_request_time_ < MAX_RESPONSE_SECONDS_FILL_DESC}\n')
+            if current_time.timestamp() - last_request_time_ < MAX_RESPONSE_SECONDS_FILL_DESC:
+                continue
+            if not party.description:
+                scheduler_info.last_request_time = current_time.timestamp()
+                session.commit()
                 await bot.send_message(party.organizer_id,
                                        text=f'Please, fill in description of {day} party: type /edit')
             continue

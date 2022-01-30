@@ -28,3 +28,4 @@ class Poll(Base):  # type: ignore
 
     poll_id = Column(String, primary_key=True)
     party_id = Column(Integer, primary_key=True)
+    message_id = Column(Integer)

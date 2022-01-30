@@ -22,15 +22,19 @@ class Party(Base):  # type: ignore
     cost = Column(Float)
     done = Column(Boolean)
     date_datetime = Column(DateTime)
+    actual_datetime = Column(DateTime, default=None)
 
     # Relations
     users = relationship('User', secondary=UserParty, back_populates='parties')
     organizer = relationship('User', back_populates='organized_parties')
 
     def __repr__(self) -> str:
-        return f'<Party party_id={self.party_id}, title={self.title}, description={self.description}, ' \
-               f'location={self.location}, date={self.date}, organizer_id={self.organizer_id}, ' \
-               f'cost={self.cost}, done={self.done}>'
+        date_text = ""
+        if self.actual_datetime is not None:
+            date_text = f'{self.actual_datetime.strftime("%A")} {self.actual_datetime.date()}'
+        return f'Суета от {self.organizer}\n' \
+               f'Дата: {date_text}\n' \
+               f'Описание: {self.description}'
 
 
 class Idea(Base):
