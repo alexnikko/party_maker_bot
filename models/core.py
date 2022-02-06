@@ -134,8 +134,8 @@ def get_info_for_scheduler(*, session: Session):
     return planned, queue, asked, answered, agree, declined, count_response, last_request_time, total_declines
 
 
-def create_poll(poll_id: int, party_id: int, message_id: int, *, session: Session):
-    poll = Poll(poll_id=poll_id, party_id=party_id, message_id=message_id)
+def create_poll(poll_id: int, party_id: int, message_id: int, *, session: Session, poll_type: str = 'base'):
+    poll = Poll(poll_id=poll_id, party_id=party_id, message_id=message_id, poll_type=poll_type)
     session.add(poll)
     session.commit()
     return poll

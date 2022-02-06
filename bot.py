@@ -292,9 +292,6 @@ async def send_edit_party_info_request(message: types.Message):
     )
 
 
-
-
-
 @dp.callback_query_handler(lambda c: c.data.startswith('btn_change_info_'))
 async def process_callback_button_change_info(callback_query: types.CallbackQuery):
     day = callback_query.data.split('_')[-1]
@@ -471,6 +468,82 @@ async def process_help_command(message: types.Message):
     await bot.send_message(chat_id=message.chat.id, text='Database is cleared!')
 
 
+# poll = await bot.send_poll(
+    #     chat_id=GROUP_ID,
+    #     question=f'Пойдёшь на мероприятие от {callback_query.from_user.username}?',
+    #     options=['Я в деле!', 'Я пас :('],
+    #     is_anonymous=False
+    # )
+    # create_poll(poll_id=poll.poll.id, party_id=party.party_id, session=session)
+    # await bot.pin_chat_message(chat_id=GROUP_ID, message_id=poll.message_id)
+
+
+@dp.message_handler(commands=['send_final_poll'])
+async def send_send_final_poll_request(message: types.Message):
+    if message.chat.id < 0:
+        return
+    user = session.execute(select(User).filter_by(user_id=message.from_user.id)).scalar()
+    if not user:
+        await bot.send_message(chat_id=user.user_id, text='Sorry, you are not in group chat of SUETA')
+        return
+    if not user.is_organizer:
+        await bot.send_message(chat_id=user.user_id, text='Sorry, you are not organizer!')
+        return
+    parties = list(session.execute(select(Party).filter_by(organizer_id=user.user_id)).scalars())
+    if not parties:
+        await bot.send_message(chat_id=user.user_id, text='Sorry, you have no planned parties')
+        return
+    min_datetime = min(party.date_datetime for party in parties if not party.done)
+    nearest_party = session.execute(select(Party).filter_by(organizer_id=user.user_id).filter_by(date_datetime=min_datetime)).scalar()
+    print(f'We are in send_poll func\n'
+          f'{min_datetime, type(min_datetime)}\n'
+          f'{nearest_party}')
+
+    message = await bot.send_message(
+        chat_id=GROUP_ID,
+        text=nearest_party,
+    )
+    poll = await bot.send_poll(
+        chat_id=GROUP_ID,
+        question=f'Пойдёшь на мероприятие от @{user.username}?',
+        options=['Я в деле!', 'Думаю', 'тык'],
+        is_anonymous=False
+    )
+
+    create_poll(poll_id=poll.poll.id, party_id=nearest_party.party_id, message_id=poll.message_id,
+                session=session, poll_type='final')
+
+    await bot.pin_chat_message(chat_id=GROUP_ID, message_id=message.message_id)
+    await bot.pin_chat_message(chat_id=GROUP_ID, message_id=poll.message_id)
+
+
+@dp.message_handler(commands=['show_final_poll'])
+async def send_show_final_poll_results_request(message: types.Message):
+    if message.chat.id < 0:
+        return
+    user = session.execute(select(User).filter_by(user_id=message.from_user.id)).scalar()
+    if not user:
+        await bot.send_message(chat_id=user.user_id, text='Sorry, you are not in group chat of SUETA')
+        return
+    if not user.is_organizer:
+        await bot.send_message(chat_id=user.user_id, text='Sorry, you are not organizer!')
+        return
+    parties = list(session.execute(select(Party).filter_by(organizer_id=user.user_id)).scalars())
+    if not parties:
+        await bot.send_message(chat_id=user.user_id, text='Sorry, you have no planned parties')
+        return
+    min_datetime = min(party.date_datetime for party in parties if not party.done)
+    nearest_party = session.execute(select(Party).filter_by(organizer_id=user.user_id).filter_by(date_datetime=min_datetime)).scalar()
+
+    poll = session.execute(select(Poll).filter_by(party_id=nearest_party.party_id).filter_by(poll_type='final')).scalar()
+
+    await bot.forward_message(
+        chat_id=user.user_id,
+        from_chat_id=GROUP_ID,
+        message_id=poll.message_id
+    )
+
+
 @dp.message_handler(commands=['send_poll'])
 async def send_send_poll_request(message: types.Message):
     question = ' '.join(message.text.split()[1:])
@@ -535,7 +608,7 @@ async def send_show_poll_results_request(message: types.Message):
     min_datetime = min(party.date_datetime for party in parties if not party.done)
     nearest_party = session.execute(select(Party).filter_by(organizer_id=user.user_id).filter_by(date_datetime=min_datetime)).scalar()
 
-    poll = session.execute(select(Poll).filter_by(party_id=nearest_party.party_id)).scalar()
+    poll = session.execute(select(Poll).filter_by(party_id=nearest_party.party_id).filter_by(poll_type='base')).scalar()
 
     await bot.forward_message(
         chat_id=user.user_id,
@@ -637,16 +710,22 @@ async def some_poll_answer_handler(poll_answer: types.PollAnswer):
         poll = session.execute(select(Poll).filter_by(poll_id=poll_answer.poll_id)).scalar()
         party = session.execute(select(Party).filter_by(party_id=poll.party_id)).scalar()
         user = session.execute(select(User).filter_by(user_id=poll_answer.user.id)).scalar()
-        will_visit = True
-        if not poll_answer.option_ids or poll_answer.option_ids[0] == 1:
-            will_visit = False
-        if will_visit:
-            party.users.append(user)
-            # await bot.send_message(party.organizer_id, text=f'{user.username} вписался в суету!')
-        else:
-            if user in party.users:
-                party.users.pop(party.users.index(user))
-                # await bot.send_message(party.organizer_id, text=f'{user.username} выпилился из суеты!')
+        if DEBUG:
+            print('WE ARE IN POLL HANDLER')
+            print(poll.poll_type)
+            print(poll.party_id)
+            print(poll.poll_id)
+        if poll.poll_type == 'final':
+            will_visit = True
+            if not poll_answer.option_ids or poll_answer.option_ids[0] != 1:
+                will_visit = False
+            if will_visit:
+                party.users.append(user)
+                # await bot.send_message(party.organizer_id, text=f'{user.username} вписался в суету!')
+            else:
+                if user in party.users:
+                    party.users.pop(party.users.index(user))
+                    # await bot.send_message(party.organizer_id, text=f'{user.username} выпилился из суеты!')
         session.commit()
     else:
         tg_user = poll_answer['user']
