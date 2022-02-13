@@ -27,6 +27,17 @@ class Poll(Base):  # type: ignore
     __tablename__ = 'polls'
 
     poll_id = Column(String, primary_key=True)
-    party_id = Column(Integer, primary_key=True)
-    message_id = Column(Integer)
-    poll_type = Column(String)
+    party_id = Column(Integer, default=None)
+    message_id = Column(Integer, default=None)
+    poll_type = Column(String, default=None)
+    poll_type_id = Column(Integer, default=None)  # 0 - start
+
+    def __repr__(self) -> str:
+        def filter_attr(attr):
+            return not callable(getattr(self, attr)) \
+                   and not attr.startswith('__') \
+                   and not attr.startswith('_') \
+                   and attr not in ['metadata', 'registry']
+
+        fields = [attr for attr in dir(self) if filter_attr(attr)]
+        return 'Poll:\n' + '\n'.join([f'{field}={getattr(self, field)}' for field in fields])

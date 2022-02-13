@@ -7,6 +7,7 @@ from .scheduler import Planned, SchedulerInfo, Poll
 
 from datetime import datetime
 from collections import defaultdict
+from typing import Optional
 
 composite_key = tuple[str, int]
 composite_mapping_bool = dict[composite_key, bool]
@@ -14,21 +15,36 @@ composite_mapping_int = dict[composite_key, int]
 composite_mapping_float = dict[composite_key, float]
 
 
-def create_user(user_id: int, username: str, full_name: str, is_organizer: bool, *, session: Session) -> User:
-    user = session.execute(select(User).filter_by(user_id=user_id)).scalar()
-    if user:
+def create_user(user_id: int, username: str, full_name: str, is_organizer: bool, *, session: Session) -> Optional[User]:
+    user = session.execute(select(User).where(User.user_id == user_id)).scalar()
+    if user is None:
+        user = User(user_id=user_id, username=username, full_name=full_name, is_organizer=is_organizer)
+        if is_organizer:
+            user_in_queue = UserQueue(user_id=user_id, has_plan=False)
+            session.add(user_in_queue)
+        session.add(user)
+        session.commit()
         return user
-    user = User(user_id=user_id, username=username, full_name=full_name, is_organizer=is_organizer)
-    session.add(user)
-    session.commit()
-    return user
+    else:
+        if not user.is_organizer and is_organizer:
+            user.is_organizer = is_organizer
+            user_in_queue = UserQueue(user_id=user_id, has_plan=False)
+            session.add(user_in_queue)
+            session.commit()
+        elif user.is_organizer and not is_organizer:
+            user.is_organizer = is_organizer
+            user_in_queue = UserQueue(user_id=user_id, has_plan=False)
+            session.delete(user_in_queue)
+            session.commit()
+        else:
+            return None
 
 
 def delete_user(user_id: int, *, session: Session) -> bool:
-    user = session.execute(select(User).filter_by(user_id=user_id)).scalar()
+    user = session.execute(select(User).where(User.user_id == user_id)).scalar()
     if user:
         if user.is_organizer:
-            user_in_queue = session.execute(select(UserQueue).filter_by(user_id=user_id)).scalar()
+            user_in_queue = session.execute(select(UserQueue).where(UserQueue.user_id == user_id)).scalar()
             session.delete(user_in_queue)
         session.delete(user)
         session.commit()
@@ -134,8 +150,9 @@ def get_info_for_scheduler(*, session: Session):
     return planned, queue, asked, answered, agree, declined, count_response, last_request_time, total_declines
 
 
-def create_poll(poll_id: int, party_id: int, message_id: int, *, session: Session, poll_type: str = 'base'):
-    poll = Poll(poll_id=poll_id, party_id=party_id, message_id=message_id, poll_type=poll_type)
+def create_poll(poll_id: int, party_id: Optional[int], message_id: int, poll_type_id: int, poll_type: str, *, session: Session):
+    poll = Poll(poll_id=poll_id, party_id=party_id, message_id=message_id,
+                poll_type_id=poll_type_id, poll_type=poll_type)
     session.add(poll)
     session.commit()
     return poll
